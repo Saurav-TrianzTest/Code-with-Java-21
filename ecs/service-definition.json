@@ -1,0 +1,44 @@
+{
+  "serviceName": "comp-jv21pat-service",
+  "cluster": "{{CLUSTER_NAME}}",
+  "taskDefinition": "comp-jv21pat-task",
+  "desiredCount": 2,
+  "launchType": "FARGATE",
+  "platformVersion": "LATEST",
+  "deploymentConfiguration": {
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 50,
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    }
+  },
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "{{SUBNET_1}}",
+        "{{SUBNET_2}}"
+      ],
+      "securityGroups": [
+        "{{SECURITY_GROUP}}"
+      ],
+      "assignPublicIp": "ENABLED"
+    }
+  },
+  "enableECSManagedTags": true,
+  "propagateTags": "SERVICE",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "production"
+    },
+    {
+      "key": "Application",
+      "value": "comp-jv21pat"
+    },
+    {
+      "key": "ManagedBy",
+      "value": "ECS"
+    }
+  ]
+}

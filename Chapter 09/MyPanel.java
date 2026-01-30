@@ -23,8 +23,9 @@ public class MyPanel extends JPanel {
 		this.setPreferredSize(new Dimension(800, 600));
 		this.setBackground(Color.black);
 		this.setFocusable(true);
-		
-		logo = loadImage("data/bpb.png", 100, 100);
+
+		String logoPath = System.getenv("LOGO_PATH") != null ? System.getenv("LOGO_PATH") : "data/bpb.png";
+		logo = loadImage(logoPath, 100, 100);
 	}
 	
 	public void paintComponent(Graphics g) {

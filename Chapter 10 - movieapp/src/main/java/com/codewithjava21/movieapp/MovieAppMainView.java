@@ -84,7 +84,8 @@ public class MovieAppMainView extends VerticalLayout {
 	private MemoryBuffer buffer;
 	private Pattern numericPattern = Pattern.compile("-?\\d+(\\.\\d+)?");
 	private Upload upload;
-	private String noImageFile = "images/noImage.png";
+	private String imagePath = System.getenv("IMAGE_PATH") != null ? System.getenv("IMAGE_PATH") : "images";
+	private String noImageFile = imagePath + "/noImage.png";
 	private StreamResource noImgFileStream;
 	private Map<Integer,String> mapGenres = new HashMap<>();
 	
@@ -199,7 +200,7 @@ public class MovieAppMainView extends VerticalLayout {
 		upload.addSucceededListener(event -> {
 			// generate filename
 			int movieID = Integer.parseInt(movieId.getValue());
-			StringBuilder filename = new StringBuilder("images/");
+			StringBuilder filename = new StringBuilder(imagePath + "/");
 			String mimeType = event.getMIMEType();
 			
 			filename.append("movie_");
@@ -242,8 +243,8 @@ public class MovieAppMainView extends VerticalLayout {
 	}
 
 	private StreamResource getImageStream(int movieID) {
-		StringBuilder filename = new StringBuilder("images/"); 
-		
+		StringBuilder filename = new StringBuilder(imagePath + "/");
+
 		if (movieID >= 0) {
 			filename.append("movie_");
 			filename.append(movieID);
@@ -252,7 +253,7 @@ public class MovieAppMainView extends VerticalLayout {
 			
 			if (!new File(filename.toString()).exists()) {
 				// try png next
-				filename = new StringBuilder("images/");
+				filename = new StringBuilder(imagePath + "/");
 				filename.append("movie_");
 				filename.append(movieID);
 				filename.append(".png");

@@ -30,12 +30,22 @@ public class CassandraConnection {
 	public CassandraConnection(String username, String pwd, String secureBundleLocation, String keyspace) {
         // Connect to Astra DB with a secure bundle
         try {
+        	// Validate secure bundle path
+        	if (secureBundleLocation == null || secureBundleLocation.isEmpty()) {
+        		throw new IllegalStateException("Secure bundle location is not configured. Please set ASTRA_DB_SECURE_BUNDLE_PATH environment variable.");
+        	}
+
+        	java.nio.file.Path bundlePath = Paths.get(secureBundleLocation);
+        	if (!java.nio.file.Files.exists(bundlePath)) {
+        		throw new IllegalStateException("Secure bundle file not found at: " + secureBundleLocation + ". Please ensure the file is mounted in the container.");
+        	}
+
         	cqlSession = CqlSession.builder()
-                .withCloudSecureConnectBundle(Paths.get(secureBundleLocation))
+                .withCloudSecureConnectBundle(bundlePath)
                 .withAuthCredentials(username, pwd)
                 .withKeyspace(keyspace)
                 .build();
-        	
+
         	System.out.println("[OK] Success");
         	System.out.printf("[OK] Welcome to Astra DB! Connected to Keyspace %s\n", cqlSession.getKeyspace().get());
         } catch (Exception ex) {

@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   error:
     include-stacktrace: always
 
@@ -35,3 +35,9 @@ astra:
           set-keyspace-timeout: 10s
         control-connection:
           timeout: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

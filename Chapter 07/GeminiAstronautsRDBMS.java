@@ -18,6 +18,17 @@ public class GeminiAstronautsRDBMS {
         String username = System.getenv("POSTGRES_USER");
         String password = System.getenv("POSTGRES_PASSWORD");
 
+        // Validate required environment variables
+        if (url == null || url.isEmpty()) {
+        	throw new IllegalStateException("POSTGRES_URL environment variable not set. Please configure database connection.");
+        }
+        if (username == null || username.isEmpty()) {
+        	throw new IllegalStateException("POSTGRES_USER environment variable not set. Please configure database connection.");
+        }
+        if (password == null || password.isEmpty()) {
+        	throw new IllegalStateException("POSTGRES_PASSWORD environment variable not set. Please configure database connection.");
+        }
+
         AstronautPostgresDAL astronautDAL = new AstronautPostgresDAL(url, username, password);
         
 		System.out.println("Project Gemini Astronauts:");

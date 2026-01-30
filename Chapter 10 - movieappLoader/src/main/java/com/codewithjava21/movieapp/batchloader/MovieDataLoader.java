@@ -36,13 +36,14 @@ public class MovieDataLoader {
 		// get connection
 		AstraConnection conn = new AstraConnection();
 		session = conn.getCqlSession();
-		
+
 		INSERTStatement = session.prepare(strCQLINSERT);
 		INSERTByTitleStatement = session.prepare(strCQLINSERTByTitle);
-		
+
 		// read from movies_metadata.csv
+		String dataPath = System.getenv("DATA_PATH") != null ? System.getenv("DATA_PATH") : "data/movies_metadata.csv";
 		try {
-			BufferedReader reader = new BufferedReader(new FileReader("data/movies_metadata.csv"));
+			BufferedReader reader = new BufferedReader(new FileReader(dataPath));
 
 			// read the first line
 			String movieLine = reader.readLine();

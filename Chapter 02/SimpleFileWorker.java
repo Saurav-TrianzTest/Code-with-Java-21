@@ -9,10 +9,11 @@ import java.io.IOException;
 public class SimpleFileWorker {
 
 	public static void main(String[] args) {
+		String catalogPath = System.getenv("CATALOG_PATH") != null ? System.getenv("CATALOG_PATH") : "gamesCatalog.txt";
 		try {
 			//FileWriter writer = new FileWriter("gamesCatalog.txt");
 			//BufferedWriter buffWriter = new BufferedWriter(writer);
-			BufferedWriter writer = new BufferedWriter(new FileWriter("gamesCatalog.txt"));
+			BufferedWriter writer = new BufferedWriter(new FileWriter(catalogPath));
 			
 			// header
 			writer.write("name, company, year\n");
@@ -36,7 +37,7 @@ public class SimpleFileWorker {
 		System.out.println();
 
 		try {
-			BufferedReader reader = new BufferedReader(new FileReader("gamesCatalog.txt"));
+			BufferedReader reader = new BufferedReader(new FileReader(catalogPath));
 
 			// read the first line
 			String gameLine = reader.readLine();

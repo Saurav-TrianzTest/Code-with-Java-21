@@ -1,38 +1,33 @@
-# Multi-stage Dockerfile for Java Maven Application
-# Build stage
+# Stage 1: Build stage
 FROM maven:3.9.4-eclipse-temurin-21 AS builder
 
 WORKDIR /workspace
 
-# Copy the entire project structure
+# Copy entire project structure (build context is project root)
 COPY . .
 
-# Build the application
+# Build the project using Maven
 RUN mvn clean package -DskipTests
 
-# Runtime stage
-FROM eclipse-temurin:21-jre-alpine
-
-# Set working directory
-WORKDIR /app
+# Stage 2: Runtime stage
+FROM eclipse-temurin:21-jre
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S appuser && \
-    adduser -u 1001 -S appuser -G appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
 
 # Copy the built JAR from builder stage
 COPY --from=builder /workspace/target/*.jar app.jar
 
-# Set ownership
+# Set ownership to non-root user
 RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
 
-# Set Java options for containerized environment
-ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom"
-
-# Set timezone
+# Set JVM options for container environment
+ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UnlockExperimentalVMOptions"
 ENV TZ=UTC
 
 # Expose application port

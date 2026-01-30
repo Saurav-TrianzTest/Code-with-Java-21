@@ -1,137 +1,122 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo ================================================
-echo    Docker Build and Push Script
-echo ================================================
+echo ========================================
+echo Docker Build and Push Script
+echo ========================================
 echo.
 
+REM Project configuration
 set PROJECT_NAME=comp-jv21pat
 
-REM Sanitize image name using PowerShell
-for /f "delims=" %%i in ('powershell -Command "'!PROJECT_NAME!'.ToLower() -replace '[^a-z0-9]+', '-' -replace '^-+', '' -replace '-+$', ''"') do set IMAGE_NAME=%%i
+REM Sanitize image name (lowercase, hyphenate, trim hyphens)
+set IMAGE_NAME=!PROJECT_NAME!
+for %%i in (A B C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
+    set IMAGE_NAME=!IMAGE_NAME:%%i=%%i!
+)
+set IMAGE_NAME=!IMAGE_NAME: =-!
+set IMAGE_NAME=!IMAGE_NAME:_=-!
+for /f "delims=" %%a in ('powershell -Command "'!IMAGE_NAME!'.ToLower() -replace '[^a-z0-9-]','-' -replace '^-+','' -replace '-+$',''"') do set IMAGE_NAME=%%a
 
-echo Sanitized image name: !IMAGE_NAME!
+echo Project: !IMAGE_NAME!
 echo.
 
+REM Prompt for image tag
 set /p IMAGE_TAG="Enter image tag (default: latest): "
 if "!IMAGE_TAG!"=="" set IMAGE_TAG=latest
 
 REM Sanitize tag
-for /f "delims=" %%i in ('powershell -Command "'!IMAGE_TAG!'.ToLower() -replace '[^a-z0-9.-]+', '-' -replace '^-+', '' -replace '-+$', ''"') do set IMAGE_TAG=%%i
+for /f "delims=" %%a in ('powershell -Command "'!IMAGE_TAG!'.ToLower() -replace '[^a-z0-9.-]','-' -replace '^-+','' -replace '-+$',''"') do set IMAGE_TAG=%%a
 if "!IMAGE_TAG!"=="" set IMAGE_TAG=latest
 
 echo Using tag: !IMAGE_TAG!
 echo.
 
+REM Registry selection
 echo Select container registry:
-echo 1. AWS ECR
+echo 1. AWS ECR (Elastic Container Registry)
 echo 2. Docker Hub
 set /p REGISTRY_CHOICE="Enter choice (1 or 2): "
 
 if "!REGISTRY_CHOICE!"=="1" (
+    REM AWS ECR Configuration
     echo.
-    echo --- AWS ECR Configuration ---
+    echo === AWS ECR Configuration ===
     set /p AWS_REGION="Enter AWS Region (e.g., us-east-1): "
-    set /p ECR_REPO="Enter ECR Repository Name: "
+    set /p AWS_ACCOUNT_ID="Enter AWS Account ID: "
+    set /p ECR_REPO="Enter ECR repository name (default: !IMAGE_NAME!): "
+    if "!ECR_REPO!"=="" set ECR_REPO=!IMAGE_NAME!
     
-    echo Getting AWS Account ID...
-    for /f "delims=" %%i in ('aws sts get-caller-identity --query Account --output text') do set ACCOUNT_ID=%%i
-    
-    if "!ACCOUNT_ID!"=="" (
-        echo Error: Failed to get AWS Account ID. Please check your AWS credentials.
-        exit /b 1
-    )
-    
-    echo AWS Account ID: !ACCOUNT_ID!
-    
-    set REGISTRY_URL=!ACCOUNT_ID!.dkr.ecr.!AWS_REGION!.amazonaws.com
+    set REGISTRY_URL=!AWS_ACCOUNT_ID!.dkr.ecr.!AWS_REGION!.amazonaws.com
     set FULL_IMAGE_NAME=!REGISTRY_URL!/!ECR_REPO!:!IMAGE_TAG!
     
     echo.
-    echo Logging into AWS ECR...
-    aws ecr get-login-password --region !AWS_REGION! | docker login --username AWS --password-stdin !REGISTRY_URL!
+    echo Authenticating with AWS ECR...
+    for /f "delims=" %%p in ('aws ecr get-login-password --region !AWS_REGION!') do set ECR_PASSWORD=%%p
+    echo !ECR_PASSWORD! | docker login --username AWS --password-stdin !REGISTRY_URL!
     
     if !ERRORLEVEL! neq 0 (
-        echo Error: ECR login failed
+        echo ERROR: ECR authentication failed
         exit /b 1
     )
-    
-    echo ECR login successful
     
     echo Checking if ECR repository exists...
     aws ecr describe-repositories --repository-names !ECR_REPO! --region !AWS_REGION! >nul 2>&1
     if !ERRORLEVEL! neq 0 (
-        echo Repository does not exist. Creating ECR repository: !ECR_REPO!
+        echo Creating ECR repository: !ECR_REPO!
         aws ecr create-repository --repository-name !ECR_REPO! --region !AWS_REGION!
-        if !ERRORLEVEL! neq 0 (
-            echo Error: Failed to create ECR repository
-            exit /b 1
-        )
-        echo Repository created successfully
     )
     
 ) else if "!REGISTRY_CHOICE!"=="2" (
+    REM Docker Hub Configuration
     echo.
-    echo --- Docker Hub Configuration ---
+    echo === Docker Hub Configuration ===
     set /p DOCKER_USERNAME="Enter Docker Hub username: "
-    set /p DOCKER_PASSWORD="Enter Docker Hub password/token: "
+    set /p DOCKER_PASSWORD="Enter Docker Hub password or token: "
     
     set FULL_IMAGE_NAME=!DOCKER_USERNAME!/!IMAGE_NAME!:!IMAGE_TAG!
     
     echo.
-    echo Logging into Docker Hub...
+    echo Authenticating with Docker Hub...
     echo !DOCKER_PASSWORD! | docker login --username !DOCKER_USERNAME! --password-stdin
     
     if !ERRORLEVEL! neq 0 (
-        echo Error: Docker Hub login failed
+        echo ERROR: Docker Hub authentication failed
         exit /b 1
     )
-    
-    echo Docker Hub login successful
-    
 ) else (
     echo Invalid choice. Exiting.
     exit /b 1
 )
 
 echo.
-echo ================================================
+echo ========================================
 echo Building Docker image: !FULL_IMAGE_NAME!
-echo ================================================
-echo.
+echo ========================================
 
-docker build -t !FULL_IMAGE_NAME! .
+docker build -t "!FULL_IMAGE_NAME!" .
 
 if !ERRORLEVEL! neq 0 (
-    echo Error: Docker build failed
+    echo ERROR: Docker build failed
     exit /b 1
 )
 
 echo.
-echo Build successful!
-echo.
-
-echo ================================================
+echo ========================================
 echo Pushing image to registry...
-echo ================================================
-echo.
+echo ========================================
 
-docker push !FULL_IMAGE_NAME!
+docker push "!FULL_IMAGE_NAME!"
 
 if !ERRORLEVEL! neq 0 (
-    echo Error: Docker push failed
+    echo ERROR: Docker push failed
     exit /b 1
 )
 
 echo.
-echo ================================================
-echo    Success!
-echo ================================================
-echo.
+echo ========================================
+echo SUCCESS! Image pushed successfully
 echo Image: !FULL_IMAGE_NAME!
-echo.
-echo You can now deploy this image to your environment.
-echo.
+echo ========================================
 
 endlocal

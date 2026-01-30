@@ -1,30 +1,39 @@
-# Build outputs
+# Maven
 target/
-build/
-out/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
 
-# Maven wrapper (use system maven)
+# Maven Wrapper (CRITICAL: Must be excluded)
 mvnw
 mvnw.cmd
 .mvn/
 
-# Gradle wrapper (use system gradle)
-gradlew
-gradlew.bat
-gradle/wrapper/
-
-# IDE files
+# IDE
 .idea/
 .vscode/
-.eclipse/
 *.iml
 *.ipr
 *.iws
-.classpath
 .project
+.classpath
 .settings/
 
-# Version control
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Git
 .git/
 .gitignore
 .gitattributes
@@ -33,24 +42,8 @@ gradle/wrapper/
 *.md
 README*
 LICENSE*
-DOCS/
-docs/
 
-# Logs
-*.log
-logs/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Test files
+# Test
 test/
 tests/
-*.test
-
-# Temporary files
-*.tmp
-*.bak
-*.swp
-*~
+*.test.js

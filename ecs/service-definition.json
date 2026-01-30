@@ -25,6 +25,15 @@
       "assignPublicIp": "ENABLED"
     }
   },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "{{TARGET_GROUP_ARN}}",
+      "containerName": "comp-jv21pat",
+      "containerPort": 8080
+    }
+  ],
+  "healthCheckGracePeriodSeconds": 300,
+  "schedulingStrategy": "REPLICA",
   "enableECSManagedTags": true,
   "propagateTags": "SERVICE",
   "tags": [

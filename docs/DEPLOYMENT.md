@@ -1,658 +1,583 @@
-# Deployment Guide - comp-jv21pat
-
-Complete deployment guide for the Java application on AWS ECS Fargate.
+# AWS ECS Fargate Deployment Guide
 
 ## Table of Contents
-
-1. [Prerequisites](#prerequisites)
-2. [Local Development with Docker Compose](#local-development-with-docker-compose)
-3. [Building and Pushing Docker Images](#building-and-pushing-docker-images)
-4. [AWS ECS Fargate Prerequisites](#aws-ecs-fargate-prerequisites)
-5. [ECS Fargate Setup](#ecs-fargate-setup)
-6. [ECS Task Definition Explained](#ecs-task-definition-explained)
-7. [ECS Service Configuration](#ecs-service-configuration)
-8. [ECS Fargate Deployment Walkthrough](#ecs-fargate-deployment-walkthrough)
-9. [Troubleshooting](#troubleshooting)
-10. [Scaling and Management](#scaling-and-management)
-11. [Security Considerations](#security-considerations)
-
----
+- [Prerequisites](#prerequisites)
+- [Project Overview](#project-overview)
+- [Local Development Setup](#local-development-setup)
+- [Docker Build and Push](#docker-build-and-push)
+- [AWS ECS Fargate Prerequisites](#aws-ecs-fargate-prerequisites)
+- [ECS Fargate Setup](#ecs-fargate-setup)
+- [ECS Task Definition Explained](#ecs-task-definition-explained)
+- [ECS Service Configuration](#ecs-service-configuration)
+- [ECS Fargate Deployment](#ecs-fargate-deployment)
+- [Verification and Testing](#verification-and-testing)
+- [Troubleshooting](#troubleshooting)
+- [Scaling and Management](#scaling-and-management)
+- [Security Best Practices](#security-best-practices)
 
 ## Prerequisites
 
 ### Required Software
-
-- **Docker**: Version 20.10 or higher
-- **Docker Compose**: Version 2.0 or higher
-- **AWS CLI**: Version 2.x
+- **Docker**: Version 20.10 or later
+- **AWS CLI**: Version 2.x or later
 - **Java**: JDK 21 (for local development)
-- **Maven**: 3.9.x (for local builds)
-- **jq**: JSON processor (for deployment scripts)
+- **Maven**: Version 3.9.x or later (for local builds)
 
 ### AWS Account Requirements
+- Active AWS account with ECS permissions
+- IAM user with appropriate policies:
+  - `AmazonECS_FullAccess`
+  - `AmazonEC2ContainerRegistryFullAccess`
+  - `IAMReadOnlyAccess`
+- AWS CLI configured with credentials (`aws configure`)
 
-- Active AWS account with appropriate permissions
-- AWS CLI configured with credentials
-- IAM permissions for ECS, ECR, CloudWatch, VPC, and Load Balancer resources
-
----
-
-## Local Development with Docker Compose
-
-### Starting the Application Locally
-
-1. **Build and start the application**:
-
+### Verify Prerequisites
 ```bash
+# Check Docker
+docker --version
+
+# Check AWS CLI
+aws --version
+aws sts get-caller-identity
+
+# Check Java
+java -version
+
+# Check Maven
+mvn -version
+```
+
+## Project Overview
+
+**Project Name**: comp-jv21pat
+**Technology Stack**: Java 21 + Maven
+**Application Type**: Java Application
+**Base Image**: eclipse-temurin:21-jre
+**Application Port**: 8080
+**Target Platform**: AWS ECS Fargate
+
+## Local Development Setup
+
+### Build Locally with Maven
+```bash
+# Navigate to project directory
+cd /modernize-data/studio-data/TNT1001/APP3381/transformed-code/1065/studio-workspace/COmp-jv21PAT
+
+# Build the project
+mvn clean package -DskipTests
+
+# Run locally
+java -jar target/*.jar
+```
+
+### Run with Docker Compose
+```bash
+# Build and run
 docker-compose up --build
-```
 
-2. **Access the application**:
+# Run in detached mode
+docker-compose up -d
 
-- Application: http://localhost:8080
+# View logs
+docker-compose logs -f
 
-3. **View logs**:
-
-```bash
-docker-compose logs -f comp-jv21pat
-```
-
-4. **Stop the application**:
-
-```bash
+# Stop services
 docker-compose down
 ```
 
-### Volume Mounts
+Access the application at: `http://localhost:8080`
 
-The docker-compose.yml configuration includes the following volumes:
+## Docker Build and Push
 
-- `./logs:/app/logs` - Application logs
-- `./config:/app/config` - Configuration files
+### Option 1: AWS ECR (Recommended for ECS)
 
----
-
-## Building and Pushing Docker Images
-
-### Linux/macOS
-
-Use the `build-push.sh` script:
-
+#### Linux/macOS
 ```bash
-cd scripts
-chmod +x build-push.sh
-./build-push.sh
+chmod +x scripts/build-push.sh
+./scripts/build-push.sh
 ```
 
-The script will:
-1. Prompt for image tag (defaults to 'latest')
-2. Ask for registry selection (AWS ECR or Docker Hub)
-3. Request registry credentials
-4. Build the Docker image
-5. Push to the selected registry
-
-### Windows
-
-Use the `build-push.bat` script:
-
+#### Windows
 ```cmd
-cd scripts
-build-push.bat
+scripts\build-push.bat
 ```
 
-### Manual Build Process
+### Option 2: Docker Hub
+The build scripts support Docker Hub as well. Select option 2 when prompted.
 
-If you prefer manual control:
-
+### Manual Docker Build
 ```bash
-# Build the image
+# Build image
 docker build -t comp-jv21pat:latest .
 
-# Tag for registry
-docker tag comp-jv21pat:latest <registry>/comp-jv21pat:latest
+# Tag for ECR
+docker tag comp-jv21pat:latest <account-id>.dkr.ecr.<region>.amazonaws.com/comp-jv21pat:latest
 
-# Push to registry
-docker push <registry>/comp-jv21pat:latest
+# Login to ECR
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+
+# Create repository (if not exists)
+aws ecr create-repository --repository-name comp-jv21pat --region <region>
+
+# Push to ECR
+docker push <account-id>.dkr.ecr.<region>.amazonaws.com/comp-jv21pat:latest
 ```
-
----
 
 ## AWS ECS Fargate Prerequisites
 
-### 1. VPC Configuration
+### 1. VPC and Networking
+ECS Fargate requires a VPC with proper networking configuration:
 
-Ensure you have a VPC with:
-- At least 2 subnets in different Availability Zones
-- Internet Gateway attached
-- Route table with route to Internet Gateway
-- Subnets have "Auto-assign public IPv4 address" enabled
+```bash
+# List available VPCs
+aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock,Tags[?Key==`Name`].Value|[0]]' --output table
 
-### 2. Security Group
+# List subnets in a VPC
+aws ec2 describe-subnets --filters "Name=vpc-id,Values=<vpc-id>" --query 'Subnets[*].[SubnetId,AvailabilityZone,CidrBlock]' --output table
+```
 
-Create a security group with the following inbound rules:
+**Requirements**:
+- At least 2 subnets in different Availability Zones (for high availability)
+- Subnets must have internet access (NAT Gateway or Internet Gateway)
+- Public IP assignment enabled (or use NAT Gateway)
 
-| Type | Protocol | Port Range | Source |
-|------|----------|------------|--------|
-| HTTP | TCP | 80 | 0.0.0.0/0 |
-| Custom TCP | TCP | 8080 | 0.0.0.0/0 |
+### 2. Security Groups
+Create a security group that allows:
+- Inbound traffic on port 8080 (application port)
+- Outbound traffic for external services
 
-Outbound rules:
-- Allow all traffic to 0.0.0.0/0
+```bash
+# Create security group
+aws ec2 create-security-group \
+    --group-name comp-jv21pat-sg \
+    --description "Security group for comp-jv21pat ECS service" \
+    --vpc-id <vpc-id>
+
+# Add inbound rule for application port
+aws ec2 authorize-security-group-ingress \
+    --group-id <security-group-id> \
+    --protocol tcp \
+    --port 8080 \
+    --cidr 0.0.0.0/0
+
+# Add inbound rule for load balancer (if using ALB)
+aws ec2 authorize-security-group-ingress \
+    --group-id <security-group-id> \
+    --protocol tcp \
+    --port 80 \
+    --cidr 0.0.0.0/0
+```
 
 ### 3. IAM Roles
+ECS Fargate requires two IAM roles:
 
-#### ECS Task Execution Role
+#### Task Execution Role (Required)
+Allows ECS to pull images and write logs:
 
-Create role `ecsTaskExecutionRole` with the following policy:
-
-```json
+```bash
+# Create trust policy
+cat > trust-policy.json <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:BatchGetImage",
-        "logs:CreateLogStream",
-        "logs:PutLogEvents"
-      ],
-      "Resource": "*"
+      "Principal": {
+        "Service": "ecs-tasks.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
     }
   ]
 }
+EOF
+
+# Create role
+aws iam create-role \
+    --role-name ecsTaskExecutionRole \
+    --assume-role-policy-document file://trust-policy.json
+
+# Attach policy
+aws iam attach-role-policy \
+    --role-name ecsTaskExecutionRole \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 ```
 
-#### ECS Task Role (Optional)
+#### Task Role (Optional)
+Provides permissions for the application itself:
 
-Create role `ecsTaskRole` for application-specific AWS service access.
+```bash
+# Create role
+aws iam create-role \
+    --role-name ecsTaskRole \
+    --assume-role-policy-document file://trust-policy.json
+
+# Attach custom policies as needed
+aws iam attach-role-policy \
+    --role-name ecsTaskRole \
+    --policy-arn arn:aws:iam::aws:policy/<YourPolicy>
+```
 
 ### 4. CloudWatch Log Group
+Create log group for application logs:
 
-The deployment script will automatically create the log group:
-- Log Group Name: `/ecs/comp-jv21pat`
-- Region: Your selected AWS region
-
----
+```bash
+aws logs create-log-group --log-group-name /ecs/comp-jv21pat
+```
 
 ## ECS Fargate Setup
 
-### Architecture Overview
-
-```
-[Internet] -> [Application Load Balancer] -> [ECS Service] -> [Fargate Tasks]
-                                                  |
-                                          [CloudWatch Logs]
+### 1. Create ECS Cluster
+```bash
+aws ecs create-cluster --cluster-name comp-jv21pat-cluster
 ```
 
-### Key Components
-
-1. **ECS Cluster**: Logical grouping of services and tasks
-2. **Task Definition**: Blueprint for your application (CPU, memory, container config)
-3. **ECS Service**: Manages desired number of tasks and deployment
-4. **Application Load Balancer**: Distributes traffic to tasks (optional)
-5. **CloudWatch Logs**: Centralized logging
-
----
+### 2. Verify Cluster
+```bash
+aws ecs describe-clusters --clusters comp-jv21pat-cluster
+```
 
 ## ECS Task Definition Explained
 
-### Fargate CPU and Memory Combinations
+The task definition (`ecs/task-definition.json`) defines:
 
-Fargate requires specific CPU/memory combinations:
+### Fargate Configuration
+- **Launch Type**: `FARGATE` (serverless container execution)
+- **Network Mode**: `awsvpc` (required for Fargate, provides ENI per task)
+- **CPU**: `512` (0.5 vCPU)
+- **Memory**: `1024` (1 GB)
 
-| CPU (vCPU) | Memory (MB) |
-|------------|-------------|
-| 256 (.25) | 512, 1024, 2048 |
-| 512 (.5) | 1024, 2048, 3072, 4096 |
-| 1024 (1) | 2048-8192 (increments of 1024) |
-| 2048 (2) | 4096-16384 (increments of 1024) |
-| 4096 (4) | 8192-30720 (increments of 1024) |
-
-**Default Configuration**: CPU: 512, Memory: 1024
+### Valid CPU/Memory Combinations
+| CPU (units) | Memory (MB) |
+|-------------|-------------|
+| 256 | 512, 1024, 2048 |
+| 512 | 1024, 2048, 3072, 4096 |
+| 1024 | 2048-8192 (increments of 1024) |
+| 2048 | 4096-16384 (increments of 1024) |
+| 4096 | 8192-30720 (increments of 1024) |
 
 ### Container Definition
+- **Image**: ECR image URI
+- **Port Mappings**: Container port 8080 (no host port for Fargate)
+- **Environment Variables**:
+  - `JAVA_OPTS`: JVM memory and optimization flags
+  - `TZ`: Timezone configuration
+- **Logging**: CloudWatch Logs with awslogs driver
 
-Key configuration elements:
-
-```json
-{
-  "name": "comp-jv21pat",
-  "image": "<ECR_URI>/comp-jv21pat:latest",
-  "essential": true,
-  "portMappings": [
-    {
-      "containerPort": 8080,
-      "protocol": "tcp"
-    }
-  ],
-  "environment": [
-    {
-      "name": "JAVA_OPTS",
-      "value": "-Xmx768m -Xms256m -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
-    }
-  ],
-  "logConfiguration": {
-    "logDriver": "awslogs",
-    "options": {
-      "awslogs-group": "/ecs/comp-jv21pat",
-      "awslogs-region": "us-east-1",
-      "awslogs-stream-prefix": "ecs"
-    }
-  }
-}
-```
-
-### Java-Specific Configuration
-
-- **JAVA_OPTS**: Configured for container memory limits
-- **UseContainerSupport**: Enables container-aware JVM
-- **MaxRAMPercentage**: Limits heap to 75% of container memory
-- **Timezone**: Set to UTC for consistency
-
----
+### IAM Roles
+- **executionRoleArn**: Allows ECS to pull images and write logs
+- **taskRoleArn**: Provides permissions to the application
 
 ## ECS Service Configuration
 
-### Service Properties
+The service definition (`ecs/service-definition.json`) defines:
 
-- **Launch Type**: FARGATE
-- **Network Mode**: awsvpc (required for Fargate)
-- **Desired Count**: 2 (for high availability)
-- **Deployment Configuration**:
-  - Maximum Percent: 200% (allows rolling updates)
-  - Minimum Healthy Percent: 50% (ensures availability)
-  - Circuit Breaker: Enabled with automatic rollback
+### Service Settings
+- **Service Name**: `comp-jv21pat-service`
+- **Desired Count**: 2 (number of tasks to run)
+- **Launch Type**: `FARGATE`
+
+### Deployment Configuration
+- **Maximum Percent**: 200 (allows 2x desired count during deployment)
+- **Minimum Healthy Percent**: 50 (keeps at least 50% tasks running)
+- **Circuit Breaker**: Enabled with automatic rollback
 
 ### Network Configuration
+- **Subnets**: At least 2 subnets in different AZs
+- **Security Groups**: Allows traffic on port 8080
+- **Public IP**: Enabled (for internet access)
 
-```json
-{
-  "awsvpcConfiguration": {
-    "subnets": ["subnet-xxx", "subnet-yyy"],
-    "securityGroups": ["sg-xxx"],
-    "assignPublicIp": "ENABLED"
-  }
-}
-```
+### Load Balancer (Optional)
+- **Target Group**: Application Load Balancer target group
+- **Container Name**: `comp-jv21pat`
+- **Container Port**: 8080
+- **Health Check Grace Period**: 300 seconds (allows for startup time)
 
-### Load Balancer Integration
+### Service Tags
+- Uses `tags` parameter for service-level tagging
+- `propagateTags: SERVICE` propagates tags to tasks
 
-If using Application Load Balancer:
+## ECS Fargate Deployment
 
-```json
-{
-  "loadBalancers": [
-    {
-      "targetGroupArn": "arn:aws:elasticloadbalancing:...",
-      "containerName": "comp-jv21pat",
-      "containerPort": 8080
-    }
-  ],
-  "healthCheckGracePeriodSeconds": 300
-}
-```
+### Automated Deployment
 
----
-
-## ECS Fargate Deployment Walkthrough
-
-### Step 1: Build and Push Image
-
+#### Linux/macOS
 ```bash
-# Linux/macOS
-cd scripts
-./build-push.sh
-
-# Windows
-cd scripts
-build-push.bat
+chmod +x scripts/deploy-image.sh
+./scripts/deploy-image.sh
 ```
 
-### Step 2: Deploy to ECS
+#### Windows
+```cmd
+scripts\deploy-image.bat
+```
 
+### Manual Deployment Steps
+
+#### 1. Register Task Definition
 ```bash
-# Linux/macOS
-./deploy-image.sh
+# Replace placeholders in task definition
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+sed "s/{{ACCOUNT_ID}}/$ACCOUNT_ID/g" ecs/task-definition.json > /tmp/task-def.json
+sed -i "s/{{AWS_REGION}}/us-east-1/g" /tmp/task-def.json
+sed -i "s|{{IMAGE_URI}}|<your-image-uri>|g" /tmp/task-def.json
 
-# Windows
-deploy-image.bat
+# Register task definition
+aws ecs register-task-definition --cli-input-json file:///tmp/task-def.json
 ```
 
-### Step 3: Provide Configuration
+#### 2. Create Service
+```bash
+# Update service definition placeholders
+sed "s/{{CLUSTER_NAME}}/comp-jv21pat-cluster/g" ecs/service-definition.json > /tmp/service-def.json
+sed -i "s/{{SUBNET_1}}/<subnet-id-1>/g" /tmp/service-def.json
+sed -i "s/{{SUBNET_2}}/<subnet-id-2>/g" /tmp/service-def.json
+sed -i "s/{{SECURITY_GROUP}}/<security-group-id>/g" /tmp/service-def.json
+sed -i "s|{{TARGET_GROUP_ARN}}|<target-group-arn>|g" /tmp/service-def.json
 
-The script will prompt for:
-
-1. **AWS Region**: e.g., us-east-1
-2. **ECS Cluster Name**: e.g., production-cluster
-3. **VPC ID**: e.g., vpc-12345678
-4. **Subnet IDs**: Comma-separated, e.g., subnet-111,subnet-222
-5. **Security Group ID**: e.g., sg-12345678
-6. **Docker Image URI**: e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/comp-jv21pat:latest
-7. **Load Balancer**: y/n (script will create ALB if needed)
-
-### Step 4: Verify Deployment
-
-After deployment, the script will:
-- Wait for service stability
-- Display service status
-- Show CloudWatch log group
-- Display Load Balancer DNS (if created)
-
-### Step 5: Access Application
-
-If Load Balancer was created:
-```
-http://<load-balancer-dns>
+# Create service
+aws ecs create-service --cli-input-json file:///tmp/service-def.json
 ```
 
-Or access tasks directly via their public IPs (if no LB).
+#### 3. Wait for Stability
+```bash
+aws ecs wait services-stable \
+    --cluster comp-jv21pat-cluster \
+    --services comp-jv21pat-service
+```
 
----
+## Verification and Testing
+
+### Check Service Status
+```bash
+aws ecs describe-services \
+    --cluster comp-jv21pat-cluster \
+    --services comp-jv21pat-service
+```
+
+### List Running Tasks
+```bash
+aws ecs list-tasks \
+    --cluster comp-jv21pat-cluster \
+    --service-name comp-jv21pat-service
+```
+
+### View Task Details
+```bash
+aws ecs describe-tasks \
+    --cluster comp-jv21pat-cluster \
+    --tasks <task-id>
+```
+
+### View CloudWatch Logs
+```bash
+aws logs tail /ecs/comp-jv21pat --follow
+```
+
+### Test Application
+```bash
+# If using load balancer
+curl http://<alb-dns-name>/health
+
+# Direct task access (if public IP enabled)
+curl http://<task-public-ip>:8080/health
+```
 
 ## Troubleshooting
 
-### Task Failures
+### Common Issues
 
-#### Problem: Tasks fail to start
+#### Task Fails to Start
+1. **Check task stopped reason**:
+   ```bash
+   aws ecs describe-tasks --cluster comp-jv21pat-cluster --tasks <task-id> --query 'tasks[0].stoppedReason'
+   ```
 
-**Check:**
-1. CloudWatch logs:
+2. **Common causes**:
+   - Invalid CPU/memory combination
+   - Image pull errors (check execution role permissions)
+   - Insufficient ENI capacity in subnet
+   - Security group blocking required ports
+
+#### Task Starts But Exits Immediately
+1. **Check CloudWatch logs**:
+   ```bash
+   aws logs tail /ecs/comp-jv21pat --follow
+   ```
+
+2. **Common causes**:
+   - Application errors on startup
+   - Missing environment variables
+   - Port conflicts
+   - JVM out of memory
+
+#### Network Issues
+1. **Verify security groups**:
+   - Inbound rules allow traffic on port 8080
+   - Outbound rules allow internet access
+
+2. **Verify subnet routing**:
+   - Public subnets: Internet Gateway attached
+   - Private subnets: NAT Gateway configured
+
+3. **Check task ENI**:
+   ```bash
+   aws ecs describe-tasks --cluster comp-jv21pat-cluster --tasks <task-id> --query 'tasks[0].attachments[0].details'
+   ```
+
+#### Service Update Failures
+1. **Check deployment events**:
+   ```bash
+   aws ecs describe-services --cluster comp-jv21pat-cluster --services comp-jv21pat-service --query 'services[0].events[0:5]'
+   ```
+
+2. **Common causes**:
+   - Circuit breaker triggered (check health checks)
+   - Resource constraints (CPU/memory limits)
+   - Failed health checks
+
+### Debug Commands
+
 ```bash
-aws logs tail /ecs/comp-jv21pat --follow --region us-east-1
-```
+# Get task public IP
+aws ecs describe-tasks \
+    --cluster comp-jv21pat-cluster \
+    --tasks <task-id> \
+    --query 'tasks[0].attachments[0].details[?name==`networkInterfaceId`].value' \
+    --output text | xargs -I {} aws ec2 describe-network-interfaces \
+    --network-interface-ids {} \
+    --query 'NetworkInterfaces[0].Association.PublicIp' \
+    --output text
 
-2. Task stopped reason:
-```bash
-aws ecs describe-tasks --cluster <cluster> --tasks <task-id> --region <region>
-```
-
-**Common Causes:**
-- Image not found in ECR
-- Insufficient IAM permissions
-- Invalid CPU/memory combination
-- Application errors during startup
-
-#### Problem: Cannot pull image from ECR
-
-**Solution:**
-- Verify `ecsTaskExecutionRole` has ECR permissions
-- Check image URI is correct
-- Ensure task is in same region as ECR repository
-
-### Network Issues
-
-#### Problem: Cannot access application
-
-**Check:**
-1. Security group allows inbound traffic on port 8080
-2. Subnets have route to Internet Gateway
-3. Tasks have public IPs assigned
-4. Load Balancer target group health checks are passing
-
-#### Problem: Health checks failing
-
-**Solution:**
-- Verify application is listening on port 8080
-- Check health endpoint returns 200 status
-- Increase `healthCheckGracePeriodSeconds` if application takes time to start
-- Review application logs for startup errors
-
-### CPU/Memory Errors
-
-#### Problem: Tasks stopped with OutOfMemory
-
-**Solution:**
-- Increase task memory in task definition
-- Adjust JAVA_OPTS heap settings
-- Use valid Fargate CPU/memory combinations
-
-#### Problem: Task throttling or slow performance
-
-**Solution:**
-- Increase task CPU allocation
-- Scale out with more tasks
-- Review application performance metrics
-
-### Deployment Issues
-
-#### Problem: Service update stuck
-
-**Solution:**
-```bash
 # Force new deployment
 aws ecs update-service \
-  --cluster <cluster> \
-  --service comp-jv21pat-service \
-  --force-new-deployment \
-  --region <region>
+    --cluster comp-jv21pat-cluster \
+    --service comp-jv21pat-service \
+    --force-new-deployment
+
+# Scale service
+aws ecs update-service \
+    --cluster comp-jv21pat-cluster \
+    --service comp-jv21pat-service \
+    --desired-count 3
 ```
-
-#### Problem: Circuit breaker triggered
-
-**Solution:**
-- Check CloudWatch logs for application errors
-- Verify health check configuration
-- Review recent code changes
-- Rollback to previous task definition if needed
-
----
 
 ## Scaling and Management
 
 ### Manual Scaling
-
 ```bash
 # Scale to 5 tasks
 aws ecs update-service \
-  --cluster <cluster> \
-  --service comp-jv21pat-service \
-  --desired-count 5 \
-  --region <region>
+    --cluster comp-jv21pat-cluster \
+    --service comp-jv21pat-service \
+    --desired-count 5
 ```
 
-### Service Auto Scaling
-
-Configure target tracking scaling:
-
+### Auto Scaling
 ```bash
 # Register scalable target
 aws application-autoscaling register-scalable-target \
-  --service-namespace ecs \
-  --scalable-dimension ecs:service:DesiredCount \
-  --resource-id service/<cluster>/comp-jv21pat-service \
-  --min-capacity 2 \
-  --max-capacity 10 \
-  --region <region>
+    --service-namespace ecs \
+    --scalable-dimension ecs:service:DesiredCount \
+    --resource-id service/comp-jv21pat-cluster/comp-jv21pat-service \
+    --min-capacity 2 \
+    --max-capacity 10
 
-# Create scaling policy
+# Create scaling policy (CPU-based)
 aws application-autoscaling put-scaling-policy \
-  --service-namespace ecs \
-  --scalable-dimension ecs:service:DesiredCount \
-  --resource-id service/<cluster>/comp-jv21pat-service \
-  --policy-name cpu-scaling-policy \
-  --policy-type TargetTrackingScaling \
-  --target-tracking-scaling-policy-configuration file://scaling-policy.json \
-  --region <region>
-```
-
-scaling-policy.json:
-```json
-{
-  "TargetValue": 70.0,
-  "PredefinedMetricSpecification": {
-    "PredefinedMetricType": "ECSServiceAverageCPUUtilization"
-  },
-  "ScaleOutCooldown": 60,
-  "ScaleInCooldown": 120
-}
+    --service-namespace ecs \
+    --scalable-dimension ecs:service:DesiredCount \
+    --resource-id service/comp-jv21pat-cluster/comp-jv21pat-service \
+    --policy-name cpu-scaling-policy \
+    --policy-type TargetTrackingScaling \
+    --target-tracking-scaling-policy-configuration file://scaling-policy.json
 ```
 
 ### Blue/Green Deployments
+For zero-downtime deployments, use AWS CodeDeploy with ECS:
 
-For zero-downtime deployments:
+1. Create CodeDeploy application and deployment group
+2. Update service to use CODE_DEPLOY deployment controller
+3. Use appspec.yaml for deployment configuration
 
-1. Use AWS CodeDeploy with ECS
-2. Configure deployment configuration
-3. Set up ALB with two target groups
-4. Define traffic shifting strategy
-
-### Monitoring
-
-#### CloudWatch Metrics
-
-Key metrics to monitor:
-- CPUUtilization
-- MemoryUtilization
-- TargetResponseTime (if using ALB)
-- HealthyHostCount
-- UnhealthyHostCount
-
-#### View Logs
-
+### Service Updates
 ```bash
-# Tail logs
-aws logs tail /ecs/comp-jv21pat --follow --region <region>
-
-# Filter logs
-aws logs filter-log-events \
-  --log-group-name /ecs/comp-jv21pat \
-  --filter-pattern "ERROR" \
-  --region <region>
-```
-
-### Updating the Application
-
-1. Build new image with updated tag
-2. Push to registry
-3. Update task definition with new image
-4. Update service (triggers rolling deployment)
-
-```bash
-# Quick update
+# Update task definition (new version)
 aws ecs update-service \
-  --cluster <cluster> \
-  --service comp-jv21pat-service \
-  --force-new-deployment \
-  --region <region>
+    --cluster comp-jv21pat-cluster \
+    --service comp-jv21pat-service \
+    --task-definition comp-jv21pat-task:2
+
+# Update environment variables
+# Modify task definition JSON, then:
+aws ecs register-task-definition --cli-input-json file://updated-task-def.json
+aws ecs update-service \
+    --cluster comp-jv21pat-cluster \
+    --service comp-jv21pat-service \
+    --task-definition comp-jv21pat-task:3
 ```
 
----
+## Security Best Practices
 
-## Security Considerations
+### 1. IAM Roles
+- Use separate execution and task roles
+- Follow principle of least privilege
+- Rotate credentials regularly
+- Never embed credentials in images
 
-### Container Security
-
-- ✅ Non-root user in container
-- ✅ Minimal runtime image (eclipse-temurin JRE)
-- ✅ No unnecessary packages installed
-- ✅ Regular base image updates
-
-### Network Security
-
-- Use private subnets for production
+### 2. Network Security
+- Use private subnets with NAT Gateway (production)
 - Restrict security group rules to minimum required
+- Use VPC endpoints for AWS services (reduce internet exposure)
 - Enable VPC Flow Logs for network monitoring
-- Use AWS PrivateLink for ECR access (no internet required)
 
-### Secrets Management
+### 3. Container Security
+- Scan images for vulnerabilities (AWS ECR image scanning)
+- Use minimal base images (eclipse-temurin JRE, not JDK)
+- Run containers as non-root user
+- Enable read-only root filesystem where possible
 
-For sensitive configuration:
-
-1. **AWS Secrets Manager**:
-```json
-{
+### 4. Secrets Management
+- Use AWS Secrets Manager or Parameter Store for sensitive data
+- Reference secrets in task definition:
+  ```json
   "secrets": [
     {
       "name": "DB_PASSWORD",
       "valueFrom": "arn:aws:secretsmanager:region:account:secret:db-password"
     }
   ]
-}
-```
+  ```
 
-2. **AWS Systems Manager Parameter Store**:
-```json
-{
-  "secrets": [
-    {
-      "name": "API_KEY",
-      "valueFrom": "arn:aws:ssm:region:account:parameter/api-key"
-    }
-  ]
-}
-```
+### 5. Logging and Monitoring
+- Enable CloudWatch Logs for all containers
+- Set up CloudWatch Alarms for critical metrics
+- Use AWS X-Ray for distributed tracing
+- Enable ECS Container Insights for detailed metrics
 
-### IAM Best Practices
-
-- Use separate task execution and task roles
-- Follow principle of least privilege
-- Regularly audit IAM policies
-- Enable CloudTrail for API logging
-
-### Image Security
-
-- Scan images for vulnerabilities (ECR scanning)
-- Use specific image tags (not 'latest' in production)
-- Implement image signing
-- Regular dependency updates
-
----
-
-## Java-Specific Considerations
-
-### JVM Memory Management
-
-For containerized Java applications:
-
-- Set `-XX:+UseContainerSupport` (enabled by default in Java 11+)
-- Use `-XX:MaxRAMPercentage` instead of fixed heap sizes
-- Leave memory for non-heap (recommended: 75% for heap)
-- Monitor GC metrics in CloudWatch
-
-### Performance Tuning
-
-```bash
-JAVA_OPTS="
-  -Xmx768m 
-  -Xms256m 
-  -XX:+UseContainerSupport 
-  -XX:MaxRAMPercentage=75.0 
-  -XX:+UseG1GC 
-  -XX:MaxGCPauseMillis=200 
-  -Djava.security.egd=file:/dev/./urandom
-"
-```
-
-### Startup Optimization
-
-- Use Spring Boot lazy initialization if applicable
-- Consider AppCDS for faster startup
-- Optimize dependencies and classpath
-- Use healthCheckGracePeriodSeconds for slow-starting applications
-
----
+### 6. Java-Specific Security
+- Keep Java runtime updated (use latest eclipse-temurin patch versions)
+- Configure JVM security properties
+- Disable unnecessary Java features
+- Monitor JVM metrics (heap usage, GC pressure)
 
 ## Additional Resources
 
-- [AWS ECS Developer Guide](https://docs.aws.amazon.com/ecs/)
+- [AWS ECS Documentation](https://docs.aws.amazon.com/ecs/)
 - [AWS Fargate Documentation](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html)
-- [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
-- [Java Container Best Practices](https://www.eclipse.org/openj9/docs/xxusecontainersupport/)
-
----
+- [ECS Best Practices](https://docs.aws.amazon.com/AmazonECS/latest/bestpracticesguide/intro.html)
+- [Java Container Best Practices](https://docs.oracle.com/en/java/javase/21/docs/)
 
 ## Support
 
 For issues or questions:
-1. Check CloudWatch logs for application errors
+1. Check CloudWatch Logs: `/ecs/comp-jv21pat`
 2. Review ECS service events
-3. Consult AWS Support for infrastructure issues
-4. Review application documentation
+3. Consult AWS documentation
+4. Contact AWS Support (if applicable)
 
 ---
 
-**Last Updated**: 2026-01-30
-**Version**: 1.0.0
+**Generated**: 2026-01-30
+**Platform**: AWS ECS Fargate
+**Technology**: Java 21 + Maven
+**Project**: comp-jv21pat
